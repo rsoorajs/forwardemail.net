@@ -2246,5 +2246,16 @@
   "If no bounces occurred (permanent failures), then we will return a SMTP response status code of the lowest error code from non-permanent failures (or a 250 successful status code if there were none).": "If no bounces occurred (permanent failures), then we will return a SMTP response status code of the lowest error code from non-permanent failures (or a 250 successful status code if there were none).",
   "If bounces did occur then we will send bounce emails in the background after returning the lowest of all error codes to the sender.  However, if the lowest error code is >= 500, then we do not send any bounce emails.  This is because if we did, then senders would receive a double bounce email (e.g. one from their outbound MTA, such as Gmail – and also one from us).  See the section on ": "If bounces did occur then we will send bounce emails in the background after returning the lowest of all error codes to the sender.  However, if the lowest error code is >= 500, then we do not send any bounce emails.  This is because if we did, then senders would receive a double bounce email (e.g. one from their outbound MTA, such as Gmail – and also one from us).  See the section on ",
   "We also pull from the UCEPROTECT Level 1 Blacklist at ": "We also pull from the UCEPROTECT Level 1 Blacklist at ",
-  "http://wget-mirrors.uceprotect.net/rbldnsd-all/dnsbl-1.uceprotect.net.gz": "http://wget-mirrors.uceprotect.net/rbldnsd-all/dnsbl-1.uceprotect.net.gz"
+  "http://wget-mirrors.uceprotect.net/rbldnsd-all/dnsbl-1.uceprotect.net.gz": "http://wget-mirrors.uceprotect.net/rbldnsd-all/dnsbl-1.uceprotect.net.gz",
+  "Additional Disclosures": "Additional Disclosures",
+  "We do not store any emails to disk storage (everything is processed in-memory).": "We do not store any emails to disk storage (everything is processed in-memory).",
+  "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).": "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).",
+  "We do not store any logs for SMTP traffic.": "We do not store any logs for SMTP traffic.",
+  "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).": "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).",
+  "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).": "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).",
+  "This site is protected by Cloudflare and its ": "This site is protected by Cloudflare and its ",
+  "Terms of Service": "Terms of Service",
+  " apply.": " apply.",
+  "This site is protected by hCaptcha and its ": "This site is protected by hCaptcha and its ",
+  "No, absolutely not.  We do not store SMTP logs.  See our ": "No, absolutely not.  We do not store SMTP logs.  See our "
 }

@@ -2375,5 +2375,16 @@
   "Not Extended": "Tidak Diperpanjang",
   "Network Authentication Required": "Otentikasi Jaringan Diperlukan",
   "We were unable to send your help request.  We have been alerted of this problem.  Please try again or directly email <a href=\"mailto:support@forwardemail.net\">support@forwardemail.net</a>.": "Kami tidak dapat mengirimkan permintaan bantuan Anda. Kami telah diberitahu tentang masalah ini. Silakan coba lagi atau langsung email <a href=\"mailto:support@forwardemail.net\">support@forwardemail.net</a> .",
-  "Verification link will not be sent until the domain has verified TXT and MX records.": "Tautan verifikasi tidak akan dikirim hingga domain memverifikasi data TXT dan MX."
+  "Verification link will not be sent until the domain has verified TXT and MX records.": "Tautan verifikasi tidak akan dikirim hingga domain memverifikasi data TXT dan MX.",
+  "Additional Disclosures": "Additional Disclosures",
+  "We do not store any emails to disk storage (everything is processed in-memory).": "We do not store any emails to disk storage (everything is processed in-memory).",
+  "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).": "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).",
+  "We do not store any logs for SMTP traffic.": "We do not store any logs for SMTP traffic.",
+  "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).": "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).",
+  "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).": "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).",
+  "This site is protected by Cloudflare and its ": "This site is protected by Cloudflare and its ",
+  "Terms of Service": "Terms of Service",
+  " apply.": " apply.",
+  "This site is protected by hCaptcha and its ": "This site is protected by hCaptcha and its ",
+  "No, absolutely not.  We do not store SMTP logs.  See our ": "No, absolutely not.  We do not store SMTP logs.  See our "
 }

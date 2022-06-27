@@ -2375,5 +2375,16 @@
   "Not Extended": "연장되지 않음",
   "Network Authentication Required": "네트워크 인증 필요",
   "We were unable to send your help request.  We have been alerted of this problem.  Please try again or directly email <a href=\"mailto:support@forwardemail.net\">support@forwardemail.net</a>.": "도움 요청을 보낼 수 없습니다. 우리는 이 문제에 대해 경고를 받았습니다. 다시 시도하거나 <a href=\"mailto:support@forwardemail.net\">support@forwardemail.net</a> 으로 직접 이메일을 보내주십시오.",
-  "Verification link will not be sent until the domain has verified TXT and MX records.": "도메인에서 TXT 및 MX 레코드를 확인할 때까지 확인 링크가 전송되지 않습니다."
+  "Verification link will not be sent until the domain has verified TXT and MX records.": "도메인에서 TXT 및 MX 레코드를 확인할 때까지 확인 링크가 전송되지 않습니다.",
+  "Additional Disclosures": "Additional Disclosures",
+  "We do not store any emails to disk storage (everything is processed in-memory).": "We do not store any emails to disk storage (everything is processed in-memory).",
+  "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).": "We do not store any metadata about emails (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain metadata).",
+  "We do not store any logs for SMTP traffic.": "We do not store any logs for SMTP traffic.",
+  "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).": "We do not store any IP addresses for SMTP traffic (except when we detect spammers and/or malicious activity; e.g. we will blacklist senders with certain hostnames or IP addresses).",
+  "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).": "We store logs for 30 days for Website and API traffic (to increase the quality of our service and customer experience in general).",
+  "This site is protected by Cloudflare and its ": "This site is protected by Cloudflare and its ",
+  "Terms of Service": "Terms of Service",
+  " apply.": " apply.",
+  "This site is protected by hCaptcha and its ": "This site is protected by hCaptcha and its ",
+  "No, absolutely not.  We do not store SMTP logs.  See our ": "No, absolutely not.  We do not store SMTP logs.  See our "
 }
