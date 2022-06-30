@@ -2387,5 +2387,20 @@
   " apply.": " 적용하다.",
   "This site is protected by hCaptcha and its ": "이 사이트는 hCaptcha에 의해 보호되며",
   "No, absolutely not.  We do not store SMTP logs.  See our ": "아니요, 절대 아닙니다. 우리는 SMTP 로그를 저장하지 않습니다. 우리의",
-  "We tried to create a new account with this email address, but it already exists.  Please log in with this email address if it belongs to you and then try again.": "이 이메일 주소로 새 계정을 만들려고 했지만 이미 존재합니다. 이 이메일 주소가 귀하의 소유라면 이 이메일 주소로 로그인한 다음 다시 시도하십시오."
+  "We tried to create a new account with this email address, but it already exists.  Please log in with this email address if it belongs to you and then try again.": "이 이메일 주소로 새 계정을 만들려고 했지만 이미 존재합니다. 이 이메일 주소가 귀하의 소유라면 이 이메일 주소로 로그인한 다음 다시 시도하십시오.",
+  "Many other email forwarding services store and could potentially read your email.  There is no reason why forwarded emails need to be stored to disk storage – and therefore we architected the first open-source solution that does it all in-memory.": "Many other email forwarding services store and could potentially read your email.  There is no reason why forwarded emails need to be stored to disk storage – and therefore we architected the first open-source solution that does it all in-memory.",
+  "We believe you should have a right to privacy and we strictly respect it.  The code that is deployed to the server is ": "We believe you should have a right to privacy and we strictly respect it.  The code that is deployed to the server is ",
+  "Use this verification code:": "Use this verification code:",
+  "This code expires within %s.": "This code expires within %s.",
+  "Verify now": "Verify now",
+  "If you did not submit this request, then please reply to let us know.": "If you did not submit this request, then please reply to let us know.",
+  "Verification code:": "Verification code:",
+  "Reset your password": "Reset your password",
+  "Password reset": "Password reset",
+  "Click the button below within <span class=\"notranslate\">%s</span> to continue.": "Click the button below within <span class=\"notranslate\">%s</span> to continue.",
+  "Change your password": "Change your password",
+  "Below is a copy of your request submitted on ": "Below is a copy of your request submitted on ",
+  " at ": " at ",
+  "We will review your request and reply as soon as possible.": "We will review your request and reply as soon as possible.",
+  "Your Help Request": "Your Help Request"
 }

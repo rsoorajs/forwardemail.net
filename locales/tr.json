@@ -2387,5 +2387,20 @@
   " apply.": " uygulamak.",
   "This site is protected by hCaptcha and its ": "Bu site hCaptcha ve onun",
   "No, absolutely not.  We do not store SMTP logs.  See our ": "Kesinlikle değil. SMTP günlüklerini saklamıyoruz. Bkz.",
-  "We tried to create a new account with this email address, but it already exists.  Please log in with this email address if it belongs to you and then try again.": "Bu e-posta adresiyle yeni bir hesap oluşturmaya çalıştık, ancak hesap zaten var. Lütfen size aitse bu e-posta adresiyle giriş yapın ve tekrar deneyin."
+  "We tried to create a new account with this email address, but it already exists.  Please log in with this email address if it belongs to you and then try again.": "Bu e-posta adresiyle yeni bir hesap oluşturmaya çalıştık, ancak hesap zaten var. Lütfen size aitse bu e-posta adresiyle giriş yapın ve tekrar deneyin.",
+  "Many other email forwarding services store and could potentially read your email.  There is no reason why forwarded emails need to be stored to disk storage – and therefore we architected the first open-source solution that does it all in-memory.": "Many other email forwarding services store and could potentially read your email.  There is no reason why forwarded emails need to be stored to disk storage – and therefore we architected the first open-source solution that does it all in-memory.",
+  "We believe you should have a right to privacy and we strictly respect it.  The code that is deployed to the server is ": "We believe you should have a right to privacy and we strictly respect it.  The code that is deployed to the server is ",
+  "Use this verification code:": "Use this verification code:",
+  "This code expires within %s.": "This code expires within %s.",
+  "Verify now": "Verify now",
+  "If you did not submit this request, then please reply to let us know.": "If you did not submit this request, then please reply to let us know.",
+  "Verification code:": "Verification code:",
+  "Reset your password": "Reset your password",
+  "Password reset": "Password reset",
+  "Click the button below within <span class=\"notranslate\">%s</span> to continue.": "Click the button below within <span class=\"notranslate\">%s</span> to continue.",
+  "Change your password": "Change your password",
+  "Below is a copy of your request submitted on ": "Below is a copy of your request submitted on ",
+  " at ": " at ",
+  "We will review your request and reply as soon as possible.": "We will review your request and reply as soon as possible.",
+  "Your Help Request": "Your Help Request"
 }
