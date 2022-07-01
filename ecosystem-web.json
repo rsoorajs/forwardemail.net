@@ -15,20 +15,9 @@
       "script": "proxy.js",
       "exec_mode": "cluster",
       "wait_ready": true,
-      "instances": "max",
+      "instances": "2",
       "env_production": {
         "NODE_ENV": "production"
-      }
-    },
-    {
-      "name": "api",
-      "script": "api.js",
-      "exec_mode": "fork",
-      "wait_ready": true,
-      "instances": "1",
-      "env_production": {
-        "NODE_ENV": "production",
-        "API_PORT": "4000"
       }
     }
   ],
@@ -40,7 +29,7 @@
       "repo": "git@github.com:forwardemail/forwardemail.net.git",
       "path": "/var/www/production",
       "pre-deploy": "git reset --hard",
-      "post-deploy": "npm install && NODE_ENV=production npm start build && pm2 startOrGracefulReload ecosystem-web.json --env production --update-env"
+      "post-deploy": "pnpm install && NODE_ENV=production npm start build && pm2 startOrGracefulReload ecosystem-web.json --env production --update-env"
     }
   }
 }

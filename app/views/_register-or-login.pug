@@ -10,7 +10,7 @@ mixin registerOrLogin(verb, isModal = false)
           else
             = emoji("wave")
     div(class=isModal ? "" : "col-sm-12 col-md-8 offset-md-2 col-lg-6 offset-lg-3")
-      if boolean(process.env.AUTH_GOOGLE_ENABLED)
+      if ctx.passport && ctx.passport.config.providers.google
         a.btn-auth.btn-auth-google.btn-auth-google-dark.my-3(
           href="/auth/google",
           role="button"
@@ -23,7 +23,7 @@ mixin registerOrLogin(verb, isModal = false)
             .btn-auth-wrapper
               span.btn-auth-icon
               span.btn-auth-text= t(`${humanize(verb)} with Google`)
-      if boolean(process.env.AUTH_GITHUB_ENABLED)
+      if ctx.passport && ctx.passport.config.providers.github
         a.btn-auth.btn-auth-github.btn-auth-github-dark.my-3(
           href="/auth/github",
           role="button"
@@ -36,7 +36,7 @@ mixin registerOrLogin(verb, isModal = false)
             .btn-auth-wrapper
               span.btn-auth-icon
               span.btn-auth-text= t(`${humanize(verb)} with GitHub`)
-      if boolean(process.env.AUTH_GOOGLE_ENABLED) || boolean(process.env.AUTH_GITHUB_ENABLED)
+      if ctx.passport && (ctx.passport.config.providers.google || ctx.passport.config.providers.github)
         .hr-text.d-flex.text-secondary.align-items-center= t("or")
       - const action = verb === "sign up" ? "/register" : config.loginRoute;
       form.ajax-form(action=l(action), method="POST")
@@ -61,12 +61,17 @@ mixin registerOrLogin(verb, isModal = false)
             autocomplete=verb === "sign up" ? "off" : "current-password"
           )
           label(for=`input-password-${dashify(verb)}`)= t("Password")
-        if verb === 'sign in'
-          .form-group
-            small.form-text.text-right: a.text-secondary(
-              href=l("/forgot-password")
-            )= t("Forget your password?")
+        if config.hcaptchaEnabled
+          .h-captcha(data-sitekey=config.hcaptchaSiteKey, data-error-callback='hCaptchaError', data-tabindex=isModal ? '-1' : false)
         button.btn.btn-success.btn-lg.btn-block(type="submit")= t(capitalize(verb))
+        if verb === 'sign up'
+          p.mt-3.mb-1.text-center: small.text-black-50!= t('By signing up, you agree to our <a href="%s" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="%s" target="_blank" rel="noopener noreferrer">Terms</a>.', l("/privacy"), l("/terms"))
+        else if verb === 'sign in'
+          p.mt-3.mb-1.text-center
+            small
+              a.text-black-50(
+                href=l("/forgot-password")
+              )= t("Forget your password?")
       .alert.alert-warning.mt-3.text-center(class=isModal ? "mb-0" : "")
         - const isRegisterOrLogin = ["/register", config.loginRoute].includes(ctx.pathWithoutLocale);
         ul.list-inline.mb-0
@@ -88,5 +93,3 @@ mixin registerOrLogin(verb, isModal = false)
                 data-toggle=isRegisterOrLogin ? "" : "modal-anchor",
                 data-target=isRegisterOrLogin ? "" : "#modal-sign-up"
               )= t("Sign up")
-      if verb === 'sign up'
-        p.mt-3.mb-1.text-center: small.text-black-50!= t('Read our <a href="%s" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="%s" target="_blank" rel="noopener noreferrer">Terms</a>', l("/privacy"), l("/terms"))

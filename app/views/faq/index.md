@@ -6,6 +6,19 @@
 * [How do I get started and set up email forwarding](#how-do-i-get-started-and-set-up-email-forwarding)
 * [How to Send Mail As using Gmail](#how-to-send-mail-as-using-gmail)
 * [Why am I not receiving my test emails](#why-am-i-not-receiving-my-test-emails)
+* [How does your email forwarding system work](#how-does-your-email-forwarding-system-work)
+* [How do you process an email for forwarding](#how-do-you-process-an-email-for-forwarding)
+* [How do you handle email delivery issues](#how-do-you-handle-email-delivery-issues)
+* [How do you handle your IP addresses becoming blacklisted](#how-do-you-handle-your-ip-addresses-becoming-blacklisted)
+* [What are no-reply addresses](#what-are-no-reply-addresses)
+* [Do you have a whitelist](#do-you-have-a-whitelist)
+* [Do you have a greylist](#do-you-have-a-greylist)
+* [Do you have a blacklist](#do-you-have-a-blacklist)
+* [Do you have rate limiting](#do-you-have-rate-limiting)
+* [How do you protect against backscatter](#how-do-you-protect-against-backscatter)
+  * [Prevent bounces from known MAIL FROM spammers](#prevent-bounces-from-known-mail-from-spammers)
+  * [Prevent unnecessary bounces to protect against backscatter](#prevent-unnecessary-bounces-to-protect-against-backscatter)
+* [How do you determine an email fingerprint](#how-do-you-determine-an-email-fingerprint)
 * [Why are my test emails sent to myself in Gmail showing as "suspicious"](#why-are-my-test-emails-sent-to-myself-in-gmail-showing-as-suspicious)
 * [Can I remove the via forwardemail dot net in Gmail](#can-i-remove-the-via-forwardemail-dot-net-in-gmail)
 * [Can I forward emails to ports other than 25 (e.g. if my ISP has blocked port 25)](#can-i-forward-emails-to-ports-other-than-25-eg-if-my-isp-has-blocked-port-25)
@@ -31,7 +44,7 @@
 * [Is this well-tested](#is-this-well-tested)
 * [Do you pass along SMTP response messages and codes](#do-you-pass-along-smtp-response-messages-and-codes)
 * [How do you prevent spammers and ensure good email forwarding reputation](#how-do-you-prevent-spammers-and-ensure-good-email-forwarding-reputation)
-* [What should I do if I receive spam emails?](#what-should-i-do-if-i-receive-spam-emails)
+* [What should I do if I receive spam emails](#what-should-i-do-if-i-receive-spam-emails)
 * [Can I "send mail as" in Gmail with this](#can-i-send-mail-as-in-gmail-with-this)
 * [Can I "send mail as" in Outlook with this](#can-i-send-mail-as-in-outlook-with-this)
 * [Can I "send mail as" in Apple Mail and iCloud Mail with this](#can-i-send-mail-as-in-apple-mail-and-icloud-mail-with-this)
@@ -63,7 +76,7 @@
     If you would like to hide your information from being publicly searchable over the Internet, then please go to <a class="alert-link" href="/my-account/domains" target="_blank" rel="noopener noreferrer">My Account <i class="fa fa-angle-right"></i> Domains</a> and upgrade your domain to a paid plan before starting this guide.
     Publicly searchable information on free plans includes, but is not limited to: aliases, forwarded addresses, recipients, and advanced settings such as custom port forwarding.
     If you would like to learn more about paid plans see our <a class="alert-link" rel="noopener noreferrer" href="/pricing">Pricing</a> page &ndash; otherwise keep reading!
-    All plans abide by our <a class="alert-link" href="/privacy">Privacy</a> policy of strictly not storing logs, metadata, nor emails.
+    All plans abide by our <a class="alert-link" href="/privacy">Privacy</a> policy of strictly not storing SMTP logs, metadata, nor emails.
     We don't track you like other services do.
   </span>
 </div>
@@ -763,6 +776,261 @@ If you continue to have issues, then it is most likely to be an issue with DNS p
 **Still having issues?**  Please file a <a href="/help">Help request</a> so we can help investigate the issue and find a quick resolution.
 
 
+## How does your email forwarding system work
+
+Email relies on the [SMTP protocol](https://en.wikipedia.org/wiki/Simple_Mail_Transfer_Protocol).  This protocol consists of commands sent to a server (running most commonly on port 25).  There is an initial connection, then the sender indicates who the mail is from ("MAIL FROM"), followed by where it's going to ("RCPT TO"), and finally the headers and the body of the email itself ("DATA").  The flow of our email forwarding system is described relative to each SMTP protocol command below:
+
+* Initial Connection (no command name, e.g. `telnet example.com 25`) - This is the initial connection.  We check senders that aren't whitelisted against our [Blacklist](#do-you-have-a-blacklist).  Finally, if a sender is not whitelisted, then we check to see if they have been [greylisted](#do-you-have-a-greylist).
+
+* `HELO` - This indicates a greeting to identify the sender's FQDN, IP address, or mail handler name.  This value can be spoofed, so we do not rely on this data and instead use the reverse hostname lookup of the connection's IP address.
+
+* `MAIL FROM` - This indicates the envelope mail from address of the email.  If a value is entered, it must be a valid RFC 5322 email address.  Empty values are permitted.  We [check for backscatter](#how-do-you-protect-against-backscatter) here, and we also check the MAIL FROM against our [Blacklist](#do-you-have-a-blacklist).  We finally check senders that are not on the whitelist for rate limiting (see the section on [Rate Limiting](#do-you-have-rate-limiting) and [Whitelisting](#do-you-have-a-whitelist) for more information).
+
+* `RCPT TO` - This indicates the recipient(s) of the email.  These must be valid RFC 5322 email addresses.  We only permit up to 100 envelope recipients per message (this is different than the "To" header from an email).  We also check for a valid [Sender Rewriting Scheme](https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme) ("SRS") address here to protect against spoofing with our SRS domain name.  Recipients provided that contain a "no-reply" address will receive a 553 error.  See the [complete list of "no-reply" addresses below](#what-are-no-reply-addresses).  We also check the recipient against our [Blacklist](#do-you-have-a-blacklist).
+
+* `DATA` - This is the core part of our service which processes an email.  See the section [How do you process an email for forwarding](#how-do-you-process-an-email-for-forwarding) below for more insight.
+
+
+## How do you process an email for forwarding
+
+This section describes our process related to the SMTP protocol command `DATA` in the section [How does your email forwarding system work](#how-does-your-email-forwarding-system-work) above – it is how we process an email's headers, body, security, determine where it needs to be delivered to, and how we handle connections.
+
+1. If the message exceeds the maximum size of 50mb, then it is rejected with a 552 error code.
+
+2. If the message did not have any headers, or headers were unable to be parsed, then it is rejected with a 421 error code.
+
+3. If the message did not contain a "From" header, or if any of the values in the "From" header were not valid RFC 5322 email addresses, then it is rejected with a 550 error code.
+
+4. If the message had more than 25 "Received" headers, then it was determined to have been stuck in a redirect loop, and it is rejected with a 550 error code.
+
+5. Using the email's fingerprint (see the section on [Fingerprinting](#how-do-you-determine-an-email-fingerprint)), we will check to see the message has been attempted to be retried more than 500 times, and if so, then it will be rejected with a 550 error code.
+
+6. If the message had a "To" header, and if any of the message's "To" headers were directed towards SRS rewritten addresses using our domain name, then we will rewrite them (this namely applies for vacation responders).
+
+7. If the message was missing a "Message-ID" header, then we will add one using either the envelope MAIL FROM parsed FQDN or our domain name.
+
+8. If the message was missing a valid "Date" header, then we will add one using the arrival time from the initial connection of the message.
+
+9. We store in-memory the results from scanning the email using [Spam Scanner](https://spamscanner.net).
+
+10. If there were any arbitrary results from Spam Scanner, then it is rejected with a 554 error code.  Arbitrary results only include the GTUBE test at the time of this writing.  See <https://spamassassin.apache.org/gtube/> for more insight.
+
+11. We will add the following headers to the message for debugging and abuse prevention purposes:
+
+    * `X-ForwardEmail-Version` - the current [SemVer](https://semver.org/) version from `package.json` of our codebase.
+    * `X-ForwardEmail-Session-ID` - a session ID value used for debug purposes (only applies in non-production environments).
+    * `X-ForwardEmail-Sender` - a comma separated list containing the original envelope MAIL FROM address (if it was not blank), the reverse PTR client FQDN (if it exists), and the sender's IP address.
+    * `X-Report-Abuse` - with a value of `abuse@forwardemail.net` (only if this header was not already set)
+    * `X-Report-Abuse-To` - with a value of `abuse@forwardemail.net` (only if this header was not already set)
+
+12. We then check the message for [DKIM](https://en.wikipedia.org/wiki/DomainKeys_Identified_Mail), [SPF](https://en.wikipedia.org/wiki/Sender_Policy_Framework), [ARC](https://en.wikipedia.org/wiki/Authenticated_Received_Chain), and [DMARC](https://en.wikipedia.org/wiki/DMARC).
+
+    * If the message failed DMARC and the domain had a rejection policy (e.g. `p=reject` [was in the DMARC policy](https://dmarc.postmarkapp.com/)), then it is rejected with a 550 error code.  Typically a DMARC policy for a domain can be found in the `_dmarc` sub-domain TXT record, (e.g. `dig _dmarc.example.com txt`).
+    * If the message failed SPF and the domain had a hard fail policy (e.g. `-all` was in the SPF policy as opposed to `~all` or no policy at all), then it is rejected with a 550 error code.  Typically an SPF policy for a domain can be found in the TXT record for the root domain (e.g. `dig example.com txt`).  See this section for more information on [sending mail as with Gmail](#can-i-send-mail-as-in-gmail-with-this) regarding SPF.
+
+13. Now we process the recipients of the message as collected from the `RCPT TO` command in the section [How does your email forwarding system work](#how-does-your-email-forwarding-system-work) above.  For each recipient, we perform the following operations:
+
+    * We lookup the TXT records of the domain name (the part after the `@` symbol, e.g. `example.com` if the email address was `test@example.com`).  For example, if the domain is `example.com` we do a DNS lookup such as `dig example.com txt`.
+    * We parse all TXT records that start with either `forward-email=` (free plans) or `forward-email-site-verification=` (paid plans).  Note that we parse both, in order to process emails while a user is upgrading or downgrading plans.
+    * From these parsed TXT records, we iterate over them to extract the forwarding configuration (as described in the section [How do I get started and set up email forwarding](#how-do-i-get-started-and-set-up-email-forwarding) above).  Note that we only support one `forward-email-site-verification=` value, and if more than one is supplied, then a 550 error will occur and the sender will receive a bounce for this recipient.
+    * Recursively we iterate over the extracted forwarding configuration to determine global forwarding, regex based forwarding, and all other supported forwarding configurations – which are now known as our "Forwarding Addresses".
+    * For each Forwarding Address, we support one recursive lookup (which will start this series of operations over on the given address).  If a recursive match was found, then the parent result will be removed from Forwarding Addresses, and the children added.
+    * Forwarding Addresses are parsed for uniqueness (since we don't want to send duplicates to one address or spawn additionally unnecessary SMTP client connections).
+    * For each Forwarding Address, we lookup its domain name against our API endpoint `/v1/max-forwarded-addresses` (in order to determine how many addresses the domain is permitted to forward email to per alias, e.g. 10 by default – see the section on [maximum limit on forwarding per alias](#is-there-a-limit-on-the-number-of-email-addresses-i-can-forward-to-per-alias)).  If this limit is exceeded, then a 550 error will occur and the sender will receive a bounce for this recipient.
+    * We lookup the settings of the original recipient against our API endpoint `/v1/settings`, which supports a lookup for paid users (with a fallback for free users).  This returns a configuration object for advanced settings for `port` (Number, e.g. `25`), `has_adult_content_protection` (Boolean), `has_phishing_protection` (Boolean), `has_executable_protection` (Boolean), and `has_virus_protection` (Boolean).
+    * Based off these settings, we then check against Spam Scanner results and if any errors occur, then the message is rejected with a 554 error code (e.g. if `has_virus_protection` is enabled, then we will check the Spam Scanner results for viruses).  Note that all free plan users will be opted-in for checks against adult-content, phishing, executables, and viruses.  By default, all paid plan users are opted-in as well, but this configuration can be altered under the Advanced Settings page for a domain in the Forward Email dashboard).
+
+14. For each processed recipient's Forwarding Addresses, we then perform the following operations:
+
+    * The address is checked against our [Blacklist](#do-you-have-a-blacklist), and if it was listed, then a 554 error code will occur and the sender will receive a bounce for this recipient.
+    * If the address is a webhook, then we set a Boolean for future operations (see below – we group together similar webhooks to make one POST request vs. multiple for delivery).
+    * If the address is an email address, then we parse the host for future operations (see below – we group together similar hosts to make one connection vs. multiple individual connections for delivery).
+
+15. If there are no recipients and there are no bounces, then we respond with a 550 error of "Invalid recipients".
+
+16. If there are recipients, then we iterate over them (grouped together by the same host) and deliver the emails.  See the section [How do you handle email delivery issues](#how-do-you-handle-email-delivery-issues) below for more insight.
+
+    * If any errors occur while sending emails, then we will store them in-memory for later processing.
+    * We will take the lowest error code (if any) from sending emails – and use that as the response code to the `DATA` command.  This means that emails not delivered will typically be retried by the original sender, yet emails that were already delivered will not be re-sent the next time the message is sent (as we use [Fingerprinting](#how-do-you-determine-an-email-fingerprint)).
+    * If no errors occurred, then we will send a 250 successful SMTP response status code.
+    * A bounce is determined to be any delivery attempted that results in a status code that is >= 500 (permanent failures).
+
+17. If no bounces occurred (permanent failures), then we will return a SMTP response status code of the lowest error code from non-permanent failures (or a 250 successful status code if there were none).
+
+18. If bounces did occur then we will send bounce emails in the background after returning the lowest of all error codes to the sender.  However, if the lowest error code is >= 500, then we do not send any bounce emails.  This is because if we did, then senders would receive a double bounce email (e.g. one from their outbound MTA, such as Gmail – and also one from us).  See the section on [How do you protect against backscatter](#how-do-you-protect-against-backscatter) below for more insight.
+
+
+## How do you handle email delivery issues
+
+Note that we will do a "Friendly-From" rewrite on the emails if and only if the DMARC policy of the sender was `p=reject`, AND it has a passing SPF, AND no DKIM signatures were aligned with the "From" header.  This means that we will alter the "From" header on the message, set "X-Original-From", and also set a "Reply-To" if it was not already set.  We will also re-seal the ARC seal on the message after altering these headers.
+
+We also use smart-parsing of error messages at every level of our stack – in our code, DNS requests, Node.js internals, HTTP requests (e.g. 408, 413, and 429 are mapped to the SMTP response code of 421 if the recipient is a webhook), and mail server responses (e.g. responses with "defer" or "slowdown" would be retried as 421 errors).
+
+Our logic is dummy-proof and it will also retry for TLS/SSL errors, connection issues, and more.  The goal with dummy-proofing is to maximize deliverability to all recipients for a forwarding configuration.
+
+If the recipient is a webhook, then we will permit a 10 second timeout for the request to complete with up to 3 retries (so 4 requests total before a failure).  Note that we correctly parse error codes 408, 413, and 429 and map them to a SMTP response code of 421.
+
+Otherwise if the recipient is an email address, then we will attempt to send the email with opportunistic TLS (we attempt to use STARTTLS if it is available on the recipient mail server).  If a SSL or TLS error occurs while attempting to send the email, then we will attempt to send the email without TLS (without using STARTTLS).
+
+If any DNS or connection errors occur, then we will return to the `DATA` command a SMTP response code of 421, otherwise if there are >= 500 level errors, then bounces will be sent.
+
+If we detect that an email server we are attempting to deliver to has one or more of our mail exchange IP addresses blacklisted (e.g. by whatever technology they use for deferring spammers), then we will send a SMTP response code of 421 for the sender to retry their message later (and we are alerted to the issue so we can hopefully resolve it before the next attempt).
+
+
+## How do you handle your IP addresses becoming blacklisted
+
+We routinely monitor all major DNS blacklists and if any of our mail exchange ("MX") IP addresses are listed in a major blacklist, we will pull it out of the relevant DNS A record round robin if possible until it the issue is resolved.
+
+At the time of this writing, we are listed in several DNS whitelists as well, and we take monitoring blacklists seriously.  If you see any issues before we have a chance to resolve them, please notify us in writing at <support@forwardemail.net>.
+
+
+## What are no-reply addresses
+
+We do not forward emails to "no-reply" addresses, and any sender attempting to will receive a 553 error.
+
+Email usernames equal to any of the following (case-insensitive) are considered to be no-reply addresses:
+
+* `no-reply@`
+* `no_reply@`
+* `nobody@`
+* `noreplies@`
+* `noreply@`
+
+
+## Do you have a whitelist
+
+Yes, we update a whitelist daily based off the most popular root FQDN used at the DNS level.  This list consists of approximately 200,000 to 300,000 unique root domain names.
+
+Popular providers such as Google (Gmail), Yahoo, Microsoft (Outlook), Amazon (Amazon SES), Meta (Facebook), Twitter, Netflix, Spotify, and more are included.
+
+If you are a sender or using a sender not on the whitelist, then the first time your FQDN root domain or IP address sends an email, you will be [rate limited](#do-you-have-rate-limiting) and [greylisted](#do-you-have-a-greylist).
+
+Whitelist requests can be sent to <whitelist@forwardemail.net> (please provide a complete description and reason for whitelisting, links to websites, and your businesses' certificate of formation to be whitelisted).
+
+
+## Do you have a greylist
+
+Yes, we have a very lax [email greylisting](https://en.wikipedia.org/wiki/Greylisting_\(email\)) policy used.  Greylisting only applies for senders not on our whitelist and lasts in our cache for 30 days.
+
+For any new sender, we store a key in our Redis database for 30 days with a value set to the initial arrival time of their first request.  We then reject their email with a retry status code of 450 and only allow it to pass once 5 minutes has passed.
+
+If they have successfully waited for 5 minutes from this initial arrival time, then their emails will be accepted and they will not receive this 450 status code.
+
+The key consists of either the FQDN root domain or the sender's IP address.  This means that any sub-domain that passes the greylist also will pass for the root domain, and vice-versa (this is what we mean by a "very lax" policy).
+
+For example, if an email comes from `test.example.com` before we see an email come from `example.com`, then any email from `test.example.com` and/or `example.com` will have to wait 5 minutes from the initial arrival time of the connection.  We do not make both `test.example.com` and `example.com` each wait their own 5 minute periods (our greylisting policy applies at the root domain level).
+
+Note that greylisting does not apply to any sender on our [Whitelist](#do-you-have-a-whitelist) (e.g. Meta, Amazon, Netflix, Google, Microsoft at the time of this writing).
+
+
+## Do you have a blacklist
+
+Yes, we operate our own private blacklist and update it automatically in real-time and manually based off spam and malicious activity detected.  Blacklisted senders will receive a 554 error message.
+
+We also pull from the UCEPROTECT Level 1 Blacklist at <http://wget-mirrors.uceprotect.net/rbldnsd-all/dnsbl-1.uceprotect.net.gz> every hour and feed it into our Redis database (we also compare the difference in advance; in case any IP's were removed that need to be honored).
+
+Blacklist removal requests can be sent to <whitelist@forwardemail.net> (please provide a complete description and reason for whitelisting, links to websites, and your businesses' certificate of formation to be whitelisted).
+
+
+## Do you have rate limiting
+
+Yes, we have rate limiting which applies only to senders not on the [Whitelist](#do-you-have-a-whitelist).
+
+We only permit up to 100 connections per hour, per sender resolved FQDN root domain (or) sender remote IP address (if no reverse PTR is available), and per envelope recipient to.  We store the key for rate limiting as a cryptographic hash in our Redis database.
+
+If you are sending email through our system, please ensure you have a reverse PTR set up for all your IP addresses (otherwise each unique FQDN root domain or IP address you send from will be rate limited).
+
+Note that if you send through a popular system such as Amazon SES, then you will not be rate limited since (at the time of this writing) Amazon SES is whitelisted.
+
+If you are sending from a domain such as `test.abc.123.example.com`, then the rate limit will be imposed on `example.com`.  Many spammers use hundreds of sub-domains to work around common spam filters that only rate limit unique hostnames as opposed to unique FQDN root domains.
+
+Senders that exceed the rate limit will be rejected with a 421 error.
+
+
+## How do you protect against backscatter
+
+Misdirected bounces or bounce spam (known as "[Backscatter](https://en.wikipedia.org/wiki/Backscatter_\(email\))") can cause negative reputation to sender IP addreses.
+
+We take two steps to protect against backscatter, which is detailed in the following sections [Prevent bounces from known MAIL FROM spammers](#prevent-bounces-from-known-mail-from-spammers) and [Prevent unnecessary bounces to protect against backscatter](#prevent-unnecessary-bounces-to-protect-against-backscatter) below.
+
+### Prevent bounces from known MAIL FROM spammers
+
+We pull the list from [Backscatter.org](https://www.backscatterer.org/) (powered by [UCEPROTECT](https://www.uceprotect.net/)) at <http://wget-mirrors.uceprotect.net/rbldnsd-all/ips.backscatterer.org.gz> every hour and feed it into our Redis database (we also compare the difference in advance; in case any IP's were removed that need to be honored).
+
+If the MAIL FROM is blank OR contains (case-insensitive) one of the following usernames (the portion before the @ in an email), then we check to see if the sender IP matches one on this list:
+
+* `abuse@`
+* `ftp@`
+* `hostmaster@`
+* `mailer-daemon@`
+* `mailer_daemon@`
+* `mailerdaemon@`
+* `news@`
+* `no-reply@`
+* `no_reply@`
+* `nobody@`
+* `noreplies@`
+* `noreply@`
+* `postmaster@`
+* `root@`
+* `security@`
+* `usenet@`
+* `webmaster@`
+* `www@`
+
+If the sender's IP is listed (and not in our [Whitelist](#do-you-have-a-whitelist)), then we send a 554 error with the message `The IP ${session.remoteAddress} is blacklisted by https://www.backscatterer.org/index.php?target=test&ip=${session.remoteAddress}`.  We will be alerted if a sender is on both the Backscatterer list and in our whitelist so we can resolve the issue if necessary.
+
+The techniques described in this section adhere to the "SAFE MODE" recommendation at <https://www.backscatterer.org/?target=usage> – where we only check the sender IP if certain conditions have already been met.
+
+### Prevent unnecessary bounces to protect against backscatter
+
+Bounces are emails that indicate email forwarding completely failed to the recipient and the email will not be retried.
+
+A common reason for getting listed on the Backscatterer list is misdirected bounces or bounce spam, so we must protect against this in a few ways:
+
+1. We only send bounces when >= 500 status code errors occur (when emails attempted to be forwarded have failed, e.g. Gmail responds with a 500 level error).
+
+2. We only send bounces once and once only (we use a calculated bounce fingerprint key and store it in cache to prevent sending duplicates).  The bounce fingerprint is a key that is the message's fingerprint combined with a hash of the bounce address and its error code).  See the section on [Fingerprinting](#how-do-you-determine-an-email-fingerprint) for more insight into how the message fingerprint is calculated.  Successfully sent bounce fingerprints will expire after 7 days in our Redis cache.
+
+3. We only send bounces when the MAIL FROM is not blank and does not contain (case-insensitive) one of the following usernames (the portion before the @ in an email).  Note that this list is a little bit shorter than the one above in the MAIL FROM check because we don't want to have false positives (e.g. security@ is a valid address that you might want to get a bounce for; a lot of folks use security@ for their bug bounty programs).
+
+   * `abuse@`
+   * `mailer-daemon@`
+   * `mailer_daemon@`
+   * `mailerdaemon@`
+
+4. We don't send bounces if the original message had any of the following headers (case-insensitive):
+
+   * `Auto-Submitted` (with a value of `no`)
+   * `X-Auto-Response-Suppress` (with a value of `dr`, `autoreply`, `auto-reply`, `auto_reply`, or `all`)
+   * `List-Id`
+   * `List-Unsubscribe`
+   * `Feedback-ID`
+   * `X-Auto-Reply`
+   * `X-Autoreply`
+   * `X-Auto-Respond`
+   * `X-Autorespond`
+   * `Precedence` (with a value of `bulk`, `autoreply`, `auto-reply`, `auto_reply`, or `list`)
+
+
+## How do you determine an email fingerprint
+
+An email's fingerprint is used for determining uniqueness of an email and to prevent duplicate messages from being delivered and [duplicate bounces](#prevent-unnecessary-bounces-to-protect-against-backscatter) from being sent.
+
+The fingerprint is a series of cryptographically calculated hashes delimited by a colon, and it is used internally in our codebase.
+
+These calculated hashes are pushed to an Array (a list) if and only if their values exist:
+
+* Client resolved FQDN hostname or IP address
+* `Message-ID` header value
+* `Date` header value (if and only if `Message-ID` did not exist)
+* `From` header value (if and only if `Message-ID` did not exist)
+* `To` header value (if and only if `Message-ID` did not exist)
+* `Cc` header value (if and only if `Message-ID` did not exist)
+* `Subject` header value (if and only if `Message-ID` did not exist)
+* `Body` value (if and only if `Message-ID` did not exist)
+
+
 ## Why are my test emails sent to myself in Gmail showing as "suspicious"
 
 If you see this error message in Gmail when you send a test to yourself, or when a person you're emailing with your alias sees an email from you for the first time, then **please do not worry** – as this is a built-in safety feature of Gmail.
@@ -932,79 +1200,223 @@ Or perhaps you want all emails that go to `example.com` to forward to this endpo
 
 ```json
 {
-  "attachments": [],
-  "headers": {},
+  "attachments": [
+    {
+      "type": "attachment",
+      "content": {
+        "type": "Buffer",
+        "data": [
+          104,
+          101,
+          108,
+          108,
+          111,
+          32,
+          119,
+          111,
+          114,
+          108,
+          100,
+          33
+        ]
+      },
+      "contentType": "text/plain",
+      "partId": "2",
+      "release": null,
+      "contentDisposition": "attachment",
+      "filename": "text1.txt",
+      "headers": {},
+      "checksum": "fc3ff98e8c6a0d3087d515c0473f8677",
+      "size": 12
+    }
+  ],
+  "headers": "ARC-Seal: i=1; a=rsa-sha256; t=1653506802; cv=none; d=forwardemail.net;\r\n s=default;\r\n b=R6QJ0tGwwjg2VPxiAlVIKxsg3jEPtRGKPTIOdZNWuhWrbssttFdOYzRRqvacDyN5SLoyDhVye\r\n DUA/64IxANXdHVFlpR258Yp7WxLDv2gtJD5vNSKYmUJZOWk1TynmlqTYrp0Vuqg2xIUjIlPBWAJ\r\n PPNx4JvOLjJuWYynU2qIWz0=\r\nARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed;\r\n d=forwardemail.net; h=MIME-Version: Date: Message-ID: From: Content-Type;\r\n q=dns/txt; s=default; t=1653506802;\r\n bh=cEYDoyTy+Ub29XZt/zXR+sprfUE6BW0y5cHfah01PT4=;\r\n b=F/t56AAXr2Kv3G6VsbdT5OKDVJf2ulhwLiTM18Ra4tDPUKPSGSLKrWvxiXEg5NMWwdWnsOYrL\r\n r3YSm4uMxVMhHZbHm/sUu4QZq5/18hQsAkCv6fI9ifTjDwBrN5zpLOhPoZFFo+TyvHxiII3Xv3L\r\n UEzmUIIaJRX6tboQ160tino=\r\nARC-Authentication-Results: i=1; mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)\r\nReceived-SPF: none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) client-ip=127.0.0.1;\r\nAuthentication-Results: mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)\r\n",
   "headerLines": [
     {
-      "key": "dkim-signature",
-      "line": "DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=forwardemail.net;\r\n q=dns/txt; s=default; bh=fdkeB/A0FkbVP2k4J4pNPoeWH6vqBm9+b0C3OY87Cw8=;\r\n h=from:subject:date:message-id:to:mime-version:content-type:content-transfer-encoding;\r\n b=KJZp0q0u/cQhcjwilKMainmlystwHgCZ7/ncK1uBmmdGoaXlQcMHsfenLyn/uribhMVrdfWw6\r\n YhQ5AIOAGoft/fwpGhl3zP1b5qrPwYu0kLMPr2MSwkLo0YVdbHB6xF+VGeg2vaduJk6CipXjMW7\r\n Mlohmvjw0m1tnN6dAYGOkwQ="
+      "key": "arc-seal",
+      "line": "ARC-Seal: i=1; a=rsa-sha256; t=1653506802; cv=none; d=forwardemail.net;\r\n s=default;\r\n b=R6QJ0tGwwjg2VPxiAlVIKxsg3jEPtRGKPTIOdZNWuhWrbssttFdOYzRRqvacDyN5SLoyDhVye\r\n DUA/64IxANXdHVFlpR258Yp7WxLDv2gtJD5vNSKYmUJZOWk1TynmlqTYrp0Vuqg2xIUjIlPBWAJ\r\n PPNx4JvOLjJuWYynU2qIWz0="
     },
     {
-      "key": "message-id",
-      "line": "Message-ID: <123.abc@test>"
+      "key": "arc-message-signature",
+      "line": "ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed;\r\n d=forwardemail.net; h=MIME-Version: Date: Message-ID: From: Content-Type;\r\n q=dns/txt; s=default; t=1653506802;\r\n bh=cEYDoyTy+Ub29XZt/zXR+sprfUE6BW0y5cHfah01PT4=;\r\n b=F/t56AAXr2Kv3G6VsbdT5OKDVJf2ulhwLiTM18Ra4tDPUKPSGSLKrWvxiXEg5NMWwdWnsOYrL\r\n r3YSm4uMxVMhHZbHm/sUu4QZq5/18hQsAkCv6fI9ifTjDwBrN5zpLOhPoZFFo+TyvHxiII3Xv3L\r\n UEzmUIIaJRX6tboQ160tino="
     },
     {
-      "key": "date",
-      "line": "Date: Thu, 9 Nov 2000 10:44:00 -0800 (PST)"
+      "key": "arc-authentication-results",
+      "line": "ARC-Authentication-Results: i=1; mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)"
     },
     {
-      "key": "to",
-      "line": "To: webhook@example.com"
+      "key": "received-spf",
+      "line": "Received-SPF: none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) client-ip=127.0.0.1;"
     },
     {
-      "key": "from",
-      "line": "From: Test <test@user.com>"
+      "key": "authentication-results",
+      "line": "Authentication-Results: mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)"
     },
     {
-      "key": "subject",
-      "line": "Subject: testing webhooks"
+      "key": "x-forwardemail-sender",
+      "line": "X-ForwardEmail-Sender: rfc822; test@example.net"
     },
     {
-      "key": "mime-version",
-      "line": "Mime-Version: 1.0"
+      "key": "x-forwardemail-session-id",
+      "line": "X-ForwardEmail-Session-ID: w2czxgznghn5ryyw"
+    },
+    {
+      "key": "x-forwardemail-version",
+      "line": "X-ForwardEmail-Version: 9.0.0"
     },
     {
       "key": "content-type",
-      "line": "Content-Type: text/plain; charset=us-ascii"
+      "line": "Content-Type: multipart/mixed; boundary=\"--_NmP-179a735428ca7575-Part_1\""
     },
     {
-      "key": "content-transfer-encoding",
-      "line": "Content-Transfer-Encoding: 7bit"
+      "key": "from",
+      "line": "From: some <random@example.com>"
+    },
+    {
+      "key": "message-id",
+      "line": "Message-ID: <69ad5fc2-91cb-728f-ae5c-eeedc5f267b6@example.net>"
+    },
+    {
+      "key": "date",
+      "line": "Date: Wed, 25 May 2022 19:26:41 +0000"
+    },
+    {
+      "key": "mime-version",
+      "line": "MIME-Version: 1.0"
     }
   ],
-  "text": "Test\n",
-  "textAsHtml": "<p>Test</p>",
-  "subject": "testing webhooks",
-  "date": "2000-11-09T18:44:00.000Z",
-  "to": {
-    "value": [
-      {
-        "address": "webhook@example.com",
-        "name": ""
-      }
-    ],
-    "html": "<span class=\"mp_address_group\"><a href=\"mailto:webhook@example.com\" class=\"mp_address_email\">webhook@example.com</a></span>",
-    "text": "webhook@example.com"
-  },
+  "html": "<strong>some random text</strong>",
+  "text": "some random text",
+  "textAsHtml": "<p>some random text</p>",
+  "date": "2022-05-25T19:26:41.000Z",
   "from": {
     "value": [
       {
-        "address": "test@example.com",
-        "name": "Test"
+        "address": "random@example.com",
+        "name": "some"
       }
     ],
-    "html": "<span class=\"mp_address_group\"><span class=\"mp_address_name\">Test</span> &lt;<a href=\"mailto:test@example.com\" class=\"mp_address_email\">test@example.com</a>&gt;</span>",
-    "text": "Test <test@examplecom>"
+    "html": "<span class=\"mp_address_group\"><span class=\"mp_address_name\">some</span> &lt;<a href=\"mailto:random@example.com\" class=\"mp_address_email\">random@example.com</a>&gt;</span>",
+    "text": "some <random@example.com>"
   },
-  "messageId": "<123.abc@test>",
-  "html": false,
-  "raw": "DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=forwardemail.net;\r\n q=dns/txt; s=default; bh=fdkeB/A0FkbVP2k4J4pNPoeWH6vqBm9+b0C3OY87Cw8=;\r\n h=from:subject:date:message-id:to:mime-version:content-type:content-transfer-encoding;\r\n b=KJZp0q0u/cQhcjwilKMainmlystwHgCZ7/ncK1uBmmdGoaXlQcMHsfenLyn/uribhMVrdfWw6\r\n YhQ5AIOAGoft/fwpGhl3zP1b5qrPwYu0kLMPr2MSwkLo0YVdbHB6xF+VGeg2vaduJk6CipXjMW7\r\n Mlohmvjw0m1tnN6dAYGOkwQ=\r\nMessage-ID: <123.abc@test>\r\nDate: Thu, 9 Nov 2000 10:44:00 -0800 (PST)\r\nTo: webhook@example.com\r\nFrom: Test <test@example.com>\r\nSubject: testing webhooks\r\nMime-Version: 1.0\r\nContent-Type: text/plain; charset=us-ascii\r\nContent-Transfer-Encoding: 7bit\r\n\r\nTest\r\n"
+  "messageId": "<69ad5fc2-91cb-728f-ae5c-eeedc5f267b6@example.net>",
+  "raw": "ARC-Seal: i=1; a=rsa-sha256; t=1653506802; cv=none; d=forwardemail.net;\r\n s=default;\r\n b=R6QJ0tGwwjg2VPxiAlVIKxsg3jEPtRGKPTIOdZNWuhWrbssttFdOYzRRqvacDyN5SLoyDhVye\r\n DUA/64IxANXdHVFlpR258Yp7WxLDv2gtJD5vNSKYmUJZOWk1TynmlqTYrp0Vuqg2xIUjIlPBWAJ\r\n PPNx4JvOLjJuWYynU2qIWz0=\r\nARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed;\r\n d=forwardemail.net; h=MIME-Version: Date: Message-ID: From: Content-Type;\r\n q=dns/txt; s=default; t=1653506802;\r\n bh=cEYDoyTy+Ub29XZt/zXR+sprfUE6BW0y5cHfah01PT4=;\r\n b=F/t56AAXr2Kv3G6VsbdT5OKDVJf2ulhwLiTM18Ra4tDPUKPSGSLKrWvxiXEg5NMWwdWnsOYrL\r\n r3YSm4uMxVMhHZbHm/sUu4QZq5/18hQsAkCv6fI9ifTjDwBrN5zpLOhPoZFFo+TyvHxiII3Xv3L\r\n UEzmUIIaJRX6tboQ160tino=\r\nARC-Authentication-Results: i=1; mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)\r\nReceived-SPF: none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) client-ip=127.0.0.1;\r\nAuthentication-Results: mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)\r\nX-ForwardEmail-Sender: rfc822; test@example.net\r\nX-ForwardEmail-Session-ID: w2czxgznghn5ryyw\r\nX-ForwardEmail-Version: 9.0.0\r\nContent-Type: multipart/mixed; boundary=\"--_NmP-179a735428ca7575-Part_1\"\r\nFrom: some <random@example.com>\r\nMessage-ID: <69ad5fc2-91cb-728f-ae5c-eeedc5f267b6@example.net>\r\nDate: Wed, 25 May 2022 19:26:41 +0000\r\nMIME-Version: 1.0\r\n\r\n----_NmP-179a735428ca7575-Part_1\r\nContent-Type: multipart/alternative;\r\n boundary=\"--_NmP-179a735428ca7575-Part_2\"\r\n\r\n----_NmP-179a735428ca7575-Part_2\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\nsome random text\r\n----_NmP-179a735428ca7575-Part_2\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\n<strong>some random text</strong>\r\n----_NmP-179a735428ca7575-Part_2--\r\n\r\n----_NmP-179a735428ca7575-Part_1\r\nContent-Type: text/plain; name=text1.txt\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=text1.txt\r\n\r\naGVsbG8gd29ybGQh\r\n----_NmP-179a735428ca7575-Part_1--\r\n",
+  "dkim": {
+    "headerFrom": [
+      "random@example.com"
+    ],
+    "envelopeFrom": "test@example.net",
+    "results": [
+      {
+        "status": {
+          "result": "none",
+          "comment": "message not signed"
+        },
+        "info": "dkim=none (message not signed)"
+      }
+    ]
+  },
+  "spf": {
+    "domain": "example.net",
+    "client-ip": "127.0.0.1",
+    "helo": "user.oem.local",
+    "envelope-from": "test@example.net",
+    "status": {
+      "result": "none",
+      "comment": "mx1.forwardemail.net: example.net does not designate permitted sender hosts",
+      "smtp": {
+        "mailfrom": "test@example.net",
+        "helo": "user.oem.local"
+      }
+    },
+    "header": "Received-SPF: none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) client-ip=127.0.0.1;",
+    "info": "spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local",
+    "lookups": {
+      "limit": 50,
+      "count": 1
+    }
+  },
+  "arc": {
+    "status": {
+      "result": "none"
+    },
+    "i": 0,
+    "authResults": "mx1.forwardemail.net;\r\n dkim=none (message not signed);\r\n spf=none (mx1.forwardemail.net: example.net does not designate permitted sender hosts) smtp.mailfrom=test@example.net smtp.helo=user.oem.local;\r\n dmarc=none header.from=example.com;\r\n bimi=skipped (DMARC not enabled)"
+  },
+  "dmarc": {
+    "status": {
+      "result": "none",
+      "header": {
+        "from": "example.com"
+      }
+    },
+    "domain": "example.com",
+    "info": "dmarc=none header.from=example.com"
+  },
+  "bimi": {
+    "status": {
+      "header": {},
+      "result": "skipped",
+      "comment": "DMARC not enabled"
+    },
+    "info": "bimi=skipped (DMARC not enabled)"
+  },
+  "recipients": [
+    "webhook1@webhooks.net"
+  ],
+  "session": {
+    "remoteAddress": "127.0.0.1",
+    "remotePort": 65138,
+    "clientHostname": "[127.0.0.1]",
+    "hostNameAppearsAs": "user.oem.local",
+    "sender": "test@example.net",
+    "mta": "mx1.forwardemail.net",
+    "arrivalDate": "2022-05-25T19:26:41.423Z",
+    "arrivalTime": 1653506801423
+  }
 }
 ```
 
-> Note that we use the [mailparser](https://nodemailer.com/extras/mailparser/) library's "simpleParser" method to parse the message into a JSON friendly object, and also append the "raw" property with the raw email message as a String.
+> Note that we use the [mailparser](https://nodemailer.com/extras/mailparser/) library's "simpleParser" method to parse the message into a JSON friendly object.
 
-Webhook HTTP requests will retry up to 10 times (the exact same number of retries we permit for normal SMTP), with 20 seconds max timeout per endpoint POST request.  We will retry automatically based off the default status and error codes used in [superagent's retry method](https://visionmedia.github.io/superagent/#retrying-requests) (this package is also maintained by the creator of Forward Email).
+> Raw email value as a String is given as the property "raw".
+
+> Authentication results are given as properties "dkim", "spf", "arc", "dmarc", and "bimi".
+
+> The parsed email headers is given as the property "headers" – but also note you can use "headerLines" for easier iteration and parsing.
+
+> The grouped recipients for this webhook are grouped together and given as the property "recipients".
+
+> The SMTP session information is given as the property "session".  This contains information about the sender of the message, arrival time of the message, HELO, and client hostname.  The client hostname value as `session.clientHostname` is either the FQDN (from a reverse PTR lookup) or it is `session.remoteAddress` wrapped in brackets (e.g. `"[127.0.0.1]"`).
+
+> If there are attachments, they will be appended to the `attachments` Array with Buffer values.  You can parse them back into content using an approach with JavaScript such as:
+
+```js
+const data = [
+  104,
+  101,
+  108,
+  108,
+  111,
+  32,
+  119,
+  111,
+  114,
+  108,
+  100,
+  33
+];
+
+//
+// outputs "hello world!" to the console
+// (this is the content from the filename "text1.txt" in the example JSON request payload above)
+//
+console.log(Buffer.from(data).toString());
+```
+
+Webhook HTTP requests will retry up to 10 times (the exact same number of retries we permit for normal SMTP), with 20 seconds max timeout per endpoint POST request.  We will retry automatically based off the default status and error codes used in [superagent's retry method](https://visionmedia.github.io/superagent/#retrying-requests).
+
+We group together webhook HTTP requests to the same endpoint in one request instead of multiple) in order to save resources and speed up response time.  For example, if you send an email to <webhook1@example.com>, <webhook2@example.com>, and <webhook3@example.com>, and all of these are configured to hit the same *exact* endpoint URL, then only one request will be made.  We group together by exact endpoint matching with strict equality.
 
 
 ## Do you support regular expressions or regex
@@ -1128,72 +1540,7 @@ If you are on the free plan, then simply add a new DNS TXT record as shown below
 
 ## Can I just use this email forwarding service as a "fallback" or "fallover" MX server
 
-Yes, but this is <u>NOT</u> recommended as this is an incredibly rare edge case.
-
-If you use Google Business for email, and want to use our server as a fallback so your mail still gets delivered, then just specify the Google mail servers with a lower priority than our mail servers.  An example is provided below:
-
-<table class="table table-striped table-hover my-3">
-  <thead class="thead-dark">
-    <tr>
-      <th>Name/Host/Alias</th>
-      <th class="text-center">TTL</th>
-      <th>Type</th>
-      <th>Priority</th>
-      <th>Value</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>1</td>
-      <td><code>ASPMX.L.GOOGLE.COM</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>5</td>
-      <td><code>ALT1.ASPMX.L.GOOGLE.COM</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>5</td>
-      <td><code>ALT2.ASPMX.L.GOOGLE.COM</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>10</td>
-      <td><code>ALT3.ASPMX.L.GOOGLE.COM</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>10</td>
-      <td><code>ALT4.ASPMX.L.GOOGLE.COM</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>20</td>
-      <td><code>mx1.forwardemail.net</code></td>
-    </tr>
-    <tr>
-      <td><em>"@", ".", or blank</em></td>
-      <td class="text-center">3600</td>
-      <td>MX</td>
-      <td>30</td>
-      <td><code>mx2.forwardemail.net</code></td>
-    </tr>
-  </tbody>
-</table>
+No, it is not recommended, as you can only use one mail exchange server at a time.  Fallbacks are usually never retried due to priority misconfigurations and mail servers not respecting MX exchange priority checking.
 
 
 ## Can I disable specific aliases
@@ -1202,7 +1549,7 @@ Yes! As of February 6, 2020 we have added this feature.  Simply edit your DNS TX
 
 If you prefix an alias with "!" (exclamation mark) then it will still return successful respond codes to senders attempting to send to this address, but the emails themselves will go nowhere; to a blackhole.
 
-Emails sent to disabled addresses will respond with a `250` (message queued) status code, but the emails will not actually be delivered to the recipient(s).
+Emails sent to disabled addresses will respond with a SMTP response status code of 250 (accepted), but the emails will not actually be delivered to the recipient(s).
 
 For example, if I want all emails that go to `alias@example.com` to stop flowing through to `user@gmail.com`:
 
@@ -1443,13 +1790,11 @@ No, absolutely not.  See our [Privacy Policy](/privacy).
 
 ## Do you read my emails
 
-No, absolutely not.  We do not store logs.  See our [Privacy Policy](/privacy).
+No, absolutely not.  We do not store SMTP logs.  See our [Privacy Policy](/privacy).
 
-Many other email forwarding services unethically read your email.  This is not in alignment with our principles and philosophy on software.
+Many other email forwarding services store and could potentially read your email.  There is no reason why forwarded emails need to be stored to disk storage – and therefore we architected the first open-source solution that does it all in-memory.
 
-We believe you should have a right to privacy and we strictly respect it.
-
-The code that is deployed to the server is [open-source software on GitHub](https://github.com/forwardemail) for transparency and to build trust.
+We believe you should have a right to privacy and we strictly respect it.  The code that is deployed to the server is [open-source software on GitHub](https://github.com/forwardemail) for transparency and to build trust.
 
 
 ## Does it support the plus + symbol for Gmail aliases
@@ -1481,24 +1826,10 @@ Yes, absolutely.  For example if you're sending an email to `hello@example.com` 
 
 ## How do you prevent spammers and ensure good email forwarding reputation
 
-Per documentation and suggestions from Google at <https://support.google.com/a/answer/175365?hl=en>, along with best practice, including:
-
-1. **DNS Blacklists:** we test senders IP's against the Spamhaus [DNS blacklists][dns-blacklists], if any fail, then the sender is not permitted to send the message and is returned a detailed error message with instructions on how to de-list themselves from the specific blacklists they're listed under.
-
-2. **Anti-Spam and Anti-Phishing Scanner**: we built from scratch and use [Spam Scanner][spamscanner] for anti-spam prevention (it uses a Naive Bayes classifier under the hood).  We built this because we were not happy with [rspamd][] nor [SpamAssassin][], nor were we happy with their lack of privacy-focused policies and public corpus datasets.  Spam Scanner checks a message for spam, phishing, executables, viruses, and more, while completely respecting your privacy.
-
-3. **SPF and DKIM:** through checking if an SPF record exists for a sender, and if so, we reverse-lookup the SMTP connection's remote address to validate it matches the SPF record, otherwise it's rejected.  If an SPF record does not exist, then we require DKIM verification.  If DKIM headers are passed and fail, then it is rejected as well.  If no DKIM headers are passed, then we assume that DKIM validation passes.
-
-4. **MX Record Test:** through checking if the sender's from address domain has MX records (so it's actually coming from a mail exchange/SMTP server), otherwise it's rejected.
-
-5. **Fully Qualified Domain Name Test:** validates that senders SMTP connections are from a fully qualified domain name ("FQDN"), meaning no IP addresses, they must have a valid domain name resolved.
-
-6. **TXT Record Test:** through checking if the email address the sender is trying to send to has a TXT DNS record with a valid email forwarding setup. The SSL certificates (main domain name or alternative names) of all MX servers of the forwarding destination must match the MX entry.
-
-7. **ARC:** we use the [Authentication-Results][] header and validate it against the sending domain's DMARC policy.
+See our sections on [How does your email forwarding system work](#how-does-your-email-forwarding-system-work), [How do you handle email delivery issues](#how-do-you-handle-email-delivery-issues), and [How do you handle your IP addresses becoming blacklisted](#how-do-you-handle-your-ip-addresses-becoming-blacklisted) above.
 
 
-## What should I do if I receive spam emails?
+## What should I do if I receive spam emails
 
 You should unsubscribe from the emailing list (if possible) and block the sender.
 
@@ -1558,9 +1889,11 @@ Unfortunately Apple does not allow this, regardless of which service you use.  H
 
 ## Can I forward unlimited emails with this
 
-Practically yes - the only current restriction is that senders **by unique email address** are limited to sending (300) emails per hour through the system.
+Yes, however "relatively unknown" senders are rate limited to 1,000 connections per hour per hostname or IP.  See the section on [Rate Limiting](#do-you-have-rate-limiting) and [Greylisting](#do-you-have-a-greylist) above.
 
-If this limit is exceeded we send a "451" response code which tells the senders mail server to retry later.
+By "relatively unknown", we mean senders that do not appear in the [Whitelist](#do-you-have-a-whitelist).
+
+If this limit is exceeded we send a "421" response code which tells the senders mail server to retry again later.
 
 
 ## How do I add a profile picture to my email address
@@ -1630,16 +1963,6 @@ At no point in time do we write to disk or store emails – everything is done i
 
 [gmail-2fa]: https://myaccount.google.com/signinoptions/two-step-verification
 
-[dns-blacklists]: https://en.wikipedia.org/wiki/Domain_Name_System-based_Blackhole_List
-
 [cloudflare-dns]: https://blog.cloudflare.com/announcing-1111/
 
 [nodemailer]: https://github.com/nodemailer/nodemailer
-
-[spamscanner]: https://github.com/spamscanner/spamscanner
-
-[rspamd]: https://www.rspamd.com/
-
-[spamassassin]: https://spamassassin.apache.org/
-
-[authentication-results]: https://en.wikipedia.org/wiki/Email_authentication#Authentication-Results

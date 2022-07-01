@@ -8,6 +8,7 @@ const isSANB = require('is-string-and-not-blank');
 const pug = require('pug');
 const { boolean } = require('boolean');
 const { isEmail, isIP } = require('validator');
+const { ValidationError } = require('mongoose/lib/error');
 
 const config = require('#config');
 const logger = require('#helpers/logger');
@@ -141,15 +142,55 @@ async function onboard(ctx, next) {
     query[config.lastLocaleField] = ctx.locale;
     query[config.userFields.hasVerifiedEmail] = false;
     query[config.userFields.hasSetPassword] = false;
-    ctx.state.user = await Users.create(query);
+    try {
+      ctx.state.user = await Users.create(query);
+    } catch (err) {
+      if (
+        err instanceof ValidationError &&
+        err.errors &&
+        err.errors.email &&
+        err.errors.email.kind &&
+        err.errors.email.kind === 'unique'
+      ) {
+        ctx.logger.warn(err);
+        const redirectTo = ctx.state.l('/my-account/domains/new');
+        const message = ctx.translate('LOGIN_REQUIRED_FOR_ACTION');
+        ctx.flash('error', message);
+        if (ctx.accepts('html')) {
+          ctx.redirect(redirectTo);
+        } else {
+          ctx.body = { redirectTo };
+        }
+
+        return;
+      }
+
+      throw err;
+    }
+
     await ctx.login(ctx.state.user);
 
     // send verification email if needed
-    try {
-      ctx.state.user = await sendVerificationEmail(ctx);
-      ctx.flash('success', ctx.translate('EMAIL_VERIFICATION_SENT'));
-    } catch (err) {
-      ctx.logger.warn(err);
+    if (!ctx.state.user[config.userFields.hasVerifiedEmail]) {
+      try {
+        ctx.state.user = await sendVerificationEmail(ctx);
+        ctx.flash('success', ctx.translate('EMAIL_VERIFICATION_SENT'));
+      } catch (err) {
+        // if email failed to send then verify the user automatically
+        if (err.has_email_failed) {
+          ctx.logger.fatal(err);
+          ctx.state.user[config.userFields.hasVerifiedEmail] = true;
+          // eslint-disable-next-line max-depth
+          try {
+            ctx.state.user = await ctx.state.user.save();
+          } catch (err) {
+            ctx.logger.fatal(err);
+            ctx.flash('error', ctx.translate('UNKNOWN_ERROR'));
+          }
+        } else {
+          ctx.logger.error(err);
+        }
+      }
     }
 
     try {

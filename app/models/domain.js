@@ -158,6 +158,7 @@ const Domain = new mongoose.Schema({
   },
   onboard_email_sent_at: Date,
   verified_email_sent_at: Date,
+  missing_txt_sent_at: Date,
   // default option to require `has_recipient_verification`
   // on all aliases for verification emails to send
   has_recipient_verification: {
@@ -279,6 +280,9 @@ Domain.pre('validate', async function (next) {
         i18n.translateError('AT_LEAST_ONE_ADMIN_REQUIRED', domain.locale)
       );
     const { txt, mx } = await getVerificationResults(domain, domain.client);
+    // reset missing txt so we alert users if they are missing a TXT in future again
+    if (!domain.has_txt_record && txt && _.isDate(domain.missing_txt_sent_at))
+      domain.missing_txt_sent_at = null;
     domain.has_txt_record = txt;
     domain.has_mx_record = mx;
     next();
@@ -326,7 +330,6 @@ Domain.pre('validate', function (next) {
     domain.custom_verification.subject = '';
 
   // TODO: clean up the HTML
-
   if (!isSANB(domain.custom_verification.html)) {
     domain.custom_verification.html = '';
     domain.custom_verification.text = '';
@@ -570,6 +573,9 @@ async function verifyRecords(_id, locale, client) {
     );
 
   const { txt, mx, errors } = await getVerificationResults(domain, client);
+  // reset missing txt so we alert users if they are missing a TXT in future again
+  if (!domain.has_txt_record && txt && _.isDate(domain.missing_txt_sent_at))
+    domain.missing_txt_sent_at = null;
   domain.has_txt_record = txt;
   domain.has_mx_record = mx;
   domain.locale = locale;
@@ -666,7 +672,7 @@ async function getTxtAddresses(
           : [element.slice(0, index), element.slice(index + 1)];
 
       // addr[0] = hello (username)
-      // addr[1] = niftylettuce@gmail.com (forwarding email)
+      // addr[1] = forwardemail@gmail.com (forwarding email)
       // check if we have a match (and if it is ignored)
       if (_.isString(addr[0]) && addr[0].indexOf('!') === 0) {
         ignoredAddresses.push({
@@ -853,8 +859,7 @@ Domain.pre('save', async function (next) {
 Domain.postCreate((domain, next) => {
   // log that the domain was created
   logger.info('domain created', {
-    domain: domain.toObject(),
-    slack: true
+    domain: domain.toObject()
   });
 
   next();

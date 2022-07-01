@@ -8,12 +8,12 @@ const sanitizeHtml = require('sanitize-html');
 const validator = require('validator');
 const { authenticator } = require('otplib');
 const { boolean } = require('boolean');
+const { errors } = require('passport-local-mongoose');
 
 const Users = require('#models/user');
 const config = require('#config');
 const email = require('#helpers/email');
 const parseLoginSuccessRedirect = require('#helpers/parse-login-success-redirect');
-const passport = require('#helpers/passport');
 const sendVerificationEmail = require('#helpers/send-verification-email');
 const { Inquiries } = require('#models');
 
@@ -127,97 +127,101 @@ async function login(ctx, next) {
     return;
   }
 
-  await passport.authenticate('local', async (err, user, info) => {
-    if (err) throw err;
+  return ctx.passport && ctx.passport.config.providers.local
+    ? ctx.passport.authenticate('local', async (err, user, info) => {
+        if (err) throw err;
 
-    if (!user) {
-      if (info) throw info;
-      throw ctx.translateError('UNKNOWN_ERROR');
-    }
+        if (!user) {
+          if (info) throw info;
+          throw ctx.translateError('UNKNOWN_ERROR');
+        }
 
-    // redirect user to their last locale they were using
-    if (
-      user &&
-      isSANB(user[config.lastLocaleField]) &&
-      user[config.lastLocaleField] !== ctx.locale
-    ) {
-      ctx.state.locale = user[config.lastLocaleField];
-      ctx.request.locale = ctx.state.locale;
-      ctx.locale = ctx.request.locale;
-    }
+        // redirect user to their last locale they were using
+        if (
+          user &&
+          isSANB(user[config.lastLocaleField]) &&
+          user[config.lastLocaleField] !== ctx.locale
+        ) {
+          ctx.state.locale = user[config.lastLocaleField];
+          ctx.request.locale = ctx.state.locale;
+          ctx.locale = ctx.request.locale;
+        }
 
-    let redirectTo = await parseLoginSuccessRedirect(ctx);
+        let redirectTo = await parseLoginSuccessRedirect(ctx);
 
-    const greeting = 'Welcome back';
+        const greeting = 'Welcome back';
 
-    if (user) {
-      await ctx.login(user);
+        if (user) {
+          await ctx.login(user);
 
-      ctx.flash('custom', {
-        title: `${ctx.request.t('Hello')} ${ctx.state.emoji('wave')}`,
-        text: user[config.userFields.givenName]
-          ? `${greeting} ${user[config.userFields.givenName]}`
-          : greeting,
-        type: 'success',
-        toast: true,
-        showConfirmButton: false,
-        timer: 3000,
-        position: 'top'
-      });
+          ctx.flash('custom', {
+            title: `${ctx.request.t('Hello')} ${ctx.state.emoji('wave')}`,
+            text: user[config.userFields.givenName]
+              ? `${greeting} ${user[config.userFields.givenName]}`
+              : greeting,
+            type: 'success',
+            toast: true,
+            showConfirmButton: false,
+            timer: 3000,
+            position: 'top'
+          });
 
-      const uri = authenticator.keyuri(
-        user.email,
-        'forwardemail',
-        user[config.passport.fields.otpToken]
-      );
+          const uri = authenticator.keyuri(
+            user.email,
+            'forwardemail',
+            user[config.passport.fields.otpToken]
+          );
 
-      ctx.state.user.qrcode = await qrcode.toDataURL(uri);
-      ctx.state.user = await ctx.state.user.save();
+          ctx.state.user.qrcode = await qrcode.toDataURL(uri);
+          ctx.state.user = await ctx.state.user.save();
 
-      if (user[config.passport.fields.otpEnabled] && !ctx.session.otp)
-        redirectTo = ctx.state.l(config.loginOtpRoute);
+          if (user[config.passport.fields.otpEnabled] && !ctx.session.otp)
+            redirectTo = ctx.state.l(config.loginOtpRoute);
 
-      if (ctx.accepts('html')) {
-        ctx.redirect(redirectTo);
-      } else {
-        ctx.body = { redirectTo };
-      }
+          if (ctx.accepts('html')) {
+            ctx.redirect(redirectTo);
+          } else {
+            ctx.body = { redirectTo };
+          }
 
-      return;
-    }
+          return;
+        }
 
-    ctx.flash('custom', {
-      title: `${ctx.translate('HELLO')} ${ctx.state.emoji('wave')}`,
-      text: ctx.translate('SIGNED_IN'),
-      type: 'success',
-      toast: true,
-      showConfirmButton: false,
-      timer: 3000,
-      position: 'top'
-    });
+        ctx.flash('custom', {
+          title: `${ctx.translate('HELLO')} ${ctx.state.emoji('wave')}`,
+          text: ctx.translate('SIGNED_IN'),
+          type: 'success',
+          toast: true,
+          showConfirmButton: false,
+          timer: 3000,
+          position: 'top'
+        });
 
-    if (ctx.accepts('html')) ctx.redirect(redirectTo);
-    else ctx.body = { redirectTo };
-  })(ctx, next);
+        if (ctx.accepts('html')) ctx.redirect(redirectTo);
+        else ctx.body = { redirectTo };
+      })(ctx, next)
+    : next();
 }
 
-async function loginOtp(ctx, next) {
-  await passport.authenticate('otp', async (err, user) => {
-    if (err) throw err;
-    if (!user)
-      throw Boom.unauthorized(ctx.translateError('INVALID_OTP_PASSCODE'));
+function loginOtp(ctx, next) {
+  return ctx.passport && ctx.passport.config.providers.otp
+    ? ctx.passport.authenticate('otp', async (err, user) => {
+        if (err) throw err;
+        if (!user)
+          throw Boom.unauthorized(ctx.translateError('INVALID_OTP_PASSCODE'));
 
-    ctx.session.otp_remember_me = boolean(ctx.request.body.otp_remember_me);
+        ctx.session.otp_remember_me = boolean(ctx.request.body.otp_remember_me);
 
-    ctx.session.otp = 'totp';
-    const redirectTo = await parseLoginSuccessRedirect(ctx);
+        ctx.session.otp = 'totp';
+        const redirectTo = await parseLoginSuccessRedirect(ctx);
 
-    if (ctx.accepts('json')) {
-      ctx.body = { redirectTo };
-    } else {
-      ctx.redirect(redirectTo);
-    }
-  })(ctx, next);
+        if (ctx.accepts('json')) {
+          ctx.body = { redirectTo };
+        } else {
+          ctx.redirect(redirectTo);
+        }
+      })(ctx, next)
+    : next();
 }
 
 async function recoveryKey(ctx) {
@@ -292,7 +296,7 @@ async function recoveryKey(ctx) {
   }
 }
 
-async function register(ctx) {
+async function register(ctx, next) {
   const { body } = ctx.request;
 
   if (!_.isString(body.email) || !validator.isEmail(body.email))
@@ -311,7 +315,19 @@ async function register(ctx) {
   query[config.userFields.hasVerifiedEmail] = false;
   query[config.userFields.hasSetPassword] = true;
   query[config.lastLocaleField] = ctx.locale;
-  const user = await Users.register(query, body.password);
+  let user;
+  try {
+    user = await Users.register(query, body.password);
+  } catch (err) {
+    if (err instanceof errors.UserExistsError) {
+      ctx.logger.warn(err);
+
+      // Attempt to log the existing user in (e.g. they tried to log in from the signup page)
+      return login(ctx, next);
+    }
+
+    throw err;
+  }
 
   await ctx.login(user);
 
@@ -374,7 +390,9 @@ async function forgotPassword(ctx) {
     throw Boom.badRequest(
       ctx.translateError(
         'PASSWORD_RESET_LIMIT',
-        dayjs(user[config.userFields.resetTokenExpiresAt]).fromNow()
+        dayjs(user[config.userFields.resetTokenExpiresAt])
+          .locale(ctx.locale)
+          .fromNow()
       )
     );
 
@@ -415,7 +433,7 @@ async function forgotPassword(ctx) {
       };
     }
   } catch (err) {
-    ctx.logger.error(err);
+    ctx.logger.fatal(err);
     // reset if there was an error
     try {
       user[config.userFields.resetToken] = null;
@@ -524,7 +542,7 @@ async function catchError(ctx, next) {
     await next();
   } catch (err) {
     ctx.logger.error(err);
-    if (ctx.params.provider === 'google' && err.message === 'Consent required')
+    if (ctx.params.provider === 'google' && err.consent_required)
       return ctx.redirect('/auth/google/consent');
     ctx.flash('error', err.message);
     ctx.redirect('/login');
@@ -549,11 +567,11 @@ async function verify(ctx) {
     !ctx.state.user[config.userFields.pendingRecovery]
   ) {
     const message = ctx.translate('EMAIL_ALREADY_VERIFIED');
+    ctx.flash('success', message);
     if (ctx.accepts('html')) {
-      ctx.flash('success', message);
       ctx.redirect(redirectTo);
     } else {
-      ctx.body = { message, redirectTo };
+      ctx.body = { redirectTo };
     }
 
     return;
@@ -572,6 +590,30 @@ async function verify(ctx) {
     try {
       ctx.state.user = await sendVerificationEmail(ctx);
     } catch (err) {
+      // if email failed to send then verify the user automatically
+      // but if and only if the user was not pending recovery
+      if (
+        err.has_email_failed &&
+        !ctx.state.user[config.userFields.pendingRecovery]
+      ) {
+        ctx.logger.fatal(err);
+        ctx.state.user[config.userFields.hasVerifiedEmail] = true;
+        try {
+          ctx.state.user = await ctx.state.user.save();
+        } catch (err) {
+          ctx.logger.fatal(err);
+          ctx.flash('error', ctx.translate('UNKNOWN_ERROR'));
+        }
+
+        if (ctx.accepts('html')) {
+          ctx.redirect(redirectTo);
+        } else {
+          ctx.body = { redirectTo };
+        }
+
+        return;
+      }
+
       // wrap with try/catch to prevent redirect looping
       // (even though the koa redirect loop package will help here)
       if (!err.isBoom) return ctx.throw(err);
@@ -652,7 +694,7 @@ async function verify(ctx) {
         }
       });
     } catch (err) {
-      ctx.logger.error(err);
+      ctx.logger.fatal(err);
       throw Boom.badRequest(ctx.translateError('EMAIL_FAILED_TO_SEND'));
     }
   }
@@ -662,11 +704,11 @@ async function verify(ctx) {
     : ctx.translate('EMAIL_VERIFICATION_SUCCESS');
 
   redirectTo = pendingRecovery ? '/logout' : redirectTo;
+  ctx.flash('success', message);
   if (ctx.accepts('html')) {
-    ctx.flash('success', message);
     ctx.redirect(redirectTo);
   } else {
-    ctx.body = { message, redirectTo };
+    ctx.body = { redirectTo };
   }
 }
 

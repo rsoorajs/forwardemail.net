@@ -116,9 +116,9 @@ async function updateProfile(ctx) {
         ctx.translateError(
           'EMAIL_CHANGE_LIMIT',
           dayjs.duration(config.changeEmailLimitMs, 'milliseconds').minutes(),
-          dayjs(
-            ctx.state.user[config.userFields.changeEmailTokenExpiresAt]
-          ).fromNow()
+          dayjs(ctx.state.user[config.userFields.changeEmailTokenExpiresAt])
+            .locale(ctx.locale)
+            .fromNow()
         )
       );
 
@@ -164,7 +164,7 @@ async function updateProfile(ctx) {
         }
       });
     } catch (err) {
-      ctx.logger.error(err);
+      ctx.logger.fatal(err);
       // reset if there was an error
       try {
         ctx.state.user[config.userFields.changeEmailToken] = null;
